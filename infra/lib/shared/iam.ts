@@ -14,3 +14,4 @@ export function dynamoReadPolicy(table: Table): PolicyStatement {
     resources: [table.tableArn],
   });
 }
+
