@@ -16,7 +16,7 @@ https://tieppfn121.execute-api.us-east-1.amazonaws.com/prod/movers
 
 ---
 
-## What This Project Does
+## How this project works
 
 Every day:
 
@@ -69,16 +69,6 @@ This lets the API efficiently fetch “last 7 days” without scanning the table
 
 ---
 
-## Security Considerations
-
-- Ingestion Lambda has write-only access to DynamoDB
-- Read Lambda has read-only access
-- API key is stored in environment variables (not committed)
-- No direct frontend access to database
-- No table scans (all queries use indexed access)
-
----
-
 ## Example Stored Record
 
 ```json
@@ -110,6 +100,16 @@ aws lambda invoke \
 ```
 
 This was helpful for seeding historical data during development.
+
+---
+
+## Security Considerations
+
+- Ingestion Lambda has write-only access to DynamoDB
+- Read Lambda has read-only access
+- API key is stored in environment variables (not committed)
+- No direct frontend access to database
+- No table scans (all queries use indexed access)
 
 ---
 
