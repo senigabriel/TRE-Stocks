@@ -1,156 +1,145 @@
-**TRE Stocks – Serverless Stock Movers Dashboard**
+# TRE Stocks
 
-This project implements a serverless, event-driven stock tracking pipeline using AWS.
-It ingests daily stock data, identifies the top price mover, and stores the result for later retrieval via an API and dashboard.
+A serverless AWS application that tracks the top daily stock mover (by absolute % change) from a small watchlist and displays the last 7 days in a React frontend.
 
-The design emphasizes automation, scalability, security best practices, and clean separation of concerns, aligned with real-world cloud infrastructure patterns.
+The system runs automatically each day and updates itself — no manual steps required.
 
-🏗️ **High-Level Architecture:**
+---
 
-- EventBridge triggers a scheduled ingestion job once per day
+## Live Demo
 
-- Ingestion Lambda fetches stock data from a provided external API
+Frontend:
+https://dtk6kfvddr9ic.cloudfront.net/
 
-- The Lambda computes daily percentage changes and selects the top mover
+API:
+https://tieppfn121.execute-api.us-east-1.amazonaws.com/prod/movers
 
-- Results are stored in DynamoDB
+---
 
-- A Read API will expose the data via GET /movers
+## What This Project Does
 
-- A frontend dashboard can visualize the results
+Every day:
 
+- EventBridge triggers a Lambda function
+- The Lambda calls the Massive (Polygon) API
+- It calculates percent change for each stock in the watchlist
+- It selects the top absolute mover
+- It stores that result in DynamoDB
 
-⚙️ **Infrastructure Components:**
+The frontend then queries the last 7 days and displays:
 
-EventBridge
+- Date
+- Symbol
+- % change (color-coded)
+- Closing price
 
-- Schedules the ingestion job once per day
+---
 
-- Runs after U.S. market close to ensure finalized data
+## Architecture
 
-- Fully serverless (no cron servers)
+EventBridge (scheduled daily)
+→ Ingestion Lambda
+→ DynamoDB (primary table + GSI)
+→ API Gateway
+→ Read Lambda
+→ CloudFront + S3 React frontend
 
-Ingestion Lambda
+Everything is serverless.
 
-- Fetches stock data from the provided Massive stock tracking API
+No EC2. No containers.
 
-- Computes daily percentage change for a defined set of symbols
+---
 
-- Selects the top mover
+## DynamoDB Design
 
-- Writes a single normalized record to DynamoDB
+Primary key:
+- `symbol` (partition key)
+- `date` (sort key)
 
-DynamoDB
+GSI (GSI1):
+- `date` (partition key)
+- `symbol` (sort key)
 
-- Stores the daily top mover
+Why?
 
-- Designed for fast reads and low operational overhead
+Writes happen by symbol.
+Reads happen by date.
 
-- Partitioned for future query expansion
+This lets the API efficiently fetch “last 7 days” without scanning the table.
 
-IAM
+---
 
-- Uses least-privilege access
+## Example Stored Record
 
-- Ingestion Lambda has write-only permissions to the table
-
-- No hardcoded secrets or credentials
-
-
-📊 Watched Stocks
-
-This project tracks a predefined set of stocks specified in the project requirements.
-Only these symbols are considered when identifying Winning Stocks during ingestion.
-
-Example watched symbols:
-
-AAPL
-MSFT
-NVDA
-AMZN
-GOOGL
-META
-TSLA
-
-The ingestion Lambda fetches daily market data, filters for these symbols, determines daily “winners,” and stores the results in DynamoDB.
-
-This ensures: 
-
-Consistent analysis
-
-Predictable dataset size
-
-Clear alignment with project specs
-
-🧠 **Data Flow Overview**
-
-1. EventBridge (Daily @ Market Close)
-
-  Triggers ingestion Lambda
-
-2. Ingestion Lambda
-
-  Calls external stock API
-
-  Filters for watched symbols
-
-  Determines daily winners
-
-  Writes results to DynamoDB (date = partition key)
-
-3. Read API (GET /movers)
-
-  Queries DynamoDB
-
-  Returns last 7 days of winning stocks
-
-  No authentication required
-
-4. Frontend 
-
-  Calls Read API
-
-  Visualizes trends & winners
-
-📡 API – Get Winning Stocks
-
-Endpoint:
-
-GET /movers
-
-Description:
-Returns all winning stocks from the last 7 days, aggregated from DynamoDB.
-
-✅ Sample Response
+```json
 {
-  "range": "last_7_days",
-  "days": 7,
-  "count": 0,
-  "data": []
+  "symbol": "AAPL",
+  "date": "2026-02-27",
+  "percentChange": -3.1634,
+  "closePrice": 264.18
 }
+```
 
-When data exists:
+Only one top mover per day is stored.
 
-{
-  "range": "last_7_days",
-  "days": 7,
-  "count": 5,
-  "data": [
-   {
-      "date": "2026-02-25",
-      "symbol": "NVDA",
-      "changePercent": 3.42
-    }
-  ]
-}
-🛠 **Tech Stack**
+---
 
-- Infrastructure: AWS CDK (TypeScript)
+## Backfill Support
 
-- Compute: AWS Lambda (Node.js 20)
+The ingestion Lambda supports targeted backfills for specific trading days.
 
-- Database: DynamoDB
+Example:
 
-- API: API Gateway (REST)
+```bash
+aws lambda invoke \
+  --function-name IngestionStack-IngestionLambda... \
+  --region us-east-1 \
+  --cli-binary-format raw-in-base64-out \
+  --payload '{"backfillDates":["2026-02-26","2026-02-23"]}' \
+  output.json
+```
 
-- Frontend: React + charting library
+This was helpful for seeding historical data during development.
+
+---
+
+## Some Challenges & Tradeoffs
+
+### Trading days vs calendar days
+Markets are closed on weekends and holidays.  
+The system had to handle “no data” days gracefully and avoid writing incorrect dates.
+
+### API rate limits
+The Massive API enforces request limits.  
+I added controlled delays and 429 handling to prevent Lambda timeouts.
+
+### Avoiding duplicate dates
+Backfills initially created multiple entries for the same date.  
+The read Lambda now guarantees exactly one winner per date.
+
+### Design choice: store only the daily winner
+Instead of storing the full watchlist history, I chose to persist only the top mover for each day to keep the data model simple and aligned with the UI requirement.
+
+---
+
+## Future Improvements
+
+- Store full daily watchlist history
+- Add caching to reduce external API calls
+- Add authentication
+- Add monitoring and alerts
+- Add automated tests
+
+---
+
+## Why I Built This
+
+This project was built to demonstrate:
+
+- Event-driven serverless architecture
+- DynamoDB data modeling with GSIs
+- Scheduled ingestion pipelines
+- Clean separation between ingestion, read layer, and frontend
+- Handling real-world API constraints
+
+It’s fully automated and continues to update daily.
